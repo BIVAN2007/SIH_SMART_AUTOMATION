@@ -1,60 +1,90 @@
-// hooks/useSimulationSocket.js
-// Manages the WebSocket connection to /ws/live/{scenario} and exposes the
-// latest telemetry tick + connection state. This is the single integration
-// point between the React app and Layer 2's backend.
-
+// WebSocket integration with the FastAPI live telemetry endpoint.
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { WS_BASE } from '../config'
 
 export function useSimulationSocket() {
   const [telemetry, setTelemetry] = useState(null)
-  const [status, setStatus] = useState('idle') // idle | connecting | open | closed | error
-  const [history, setHistory] = useState([])   // driven path, for trail rendering
+  const [status, setStatus] = useState('idle')
+  const [history, setHistory] = useState([])
   const wsRef = useRef(null)
 
-  const connect = useCallback((scenario, seed) => {
-    // tear down any existing connection first
+  const connect = useCallback((scenario, seed, speed = 1) => {
     if (wsRef.current) {
+      wsRef.current.onclose = null
       wsRef.current.close()
       wsRef.current = null
     }
+
     setHistory([])
     setTelemetry(null)
     setStatus('connecting')
 
-    const params = seed != null ? `?seed=${seed}` : ''
-    const ws = new WebSocket(`${WS_BASE}/ws/live/${scenario}${params}`)
+    const params = seed != null ? `?seed=${encodeURIComponent(seed)}` : ''
+    const url = `${WS_BASE}/ws/live/${encodeURIComponent(scenario)}${params}`
+
+    console.info('[ADAS] Opening WebSocket:', url)
+    const ws = new WebSocket(url)
     wsRef.current = ws
 
-    ws.onopen = () => setStatus('open')
-
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data)
-      setTelemetry(data)
-      setHistory((prev) => {
-        const next = [...prev, data.ego_pos]
-        return next.length > 400 ? next.slice(next.length - 400) : next
-      })
+    ws.onopen = () => {
+      if (wsRef.current === ws) {
+        setStatus('open')
+        ws.send(JSON.stringify({ type: 'set_speed', value: speed }))
+      }
     }
 
-    ws.onerror = () => setStatus('error')
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        setTelemetry(data)
+        if (Array.isArray(data.ego_pos)) {
+          setHistory((prev) => {
+            const next = [...prev, data.ego_pos]
+            return next.length > 400 ? next.slice(-400) : next
+          })
+        }
+      } catch (err) {
+        console.error('[ADAS] Invalid telemetry message:', err)
+      }
+    }
 
-    ws.onclose = () => setStatus((s) => (s === 'error' ? 'error' : 'closed'))
+    ws.onerror = (event) => {
+      console.error('[ADAS] WebSocket error:', event)
+      if (wsRef.current === ws) setStatus('error')
+    }
+
+    ws.onclose = (event) => {
+      console.warn('[ADAS] WebSocket closed:', event.code, event.reason)
+      if (wsRef.current === ws) {
+        wsRef.current = null
+        setStatus((s) => (s === 'error' ? 'error' : 'closed'))
+      }
+    }
+  }, [])
+
+  const setSpeed = useCallback((speed) => {
+    const value = Number(speed)
+    if (!Number.isFinite(value)) return
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'set_speed', value }))
+    }
   }, [])
 
   const disconnect = useCallback(() => {
     if (wsRef.current) {
+      wsRef.current.onclose = null
       wsRef.current.close()
       wsRef.current = null
     }
     setStatus('closed')
   }, [])
 
-  useEffect(() => {
-    return () => {
-      if (wsRef.current) wsRef.current.close()
+  useEffect(() => () => {
+    if (wsRef.current) {
+      wsRef.current.onclose = null
+      wsRef.current.close()
     }
   }, [])
 
-  return { telemetry, status, history, connect, disconnect }
+  return { telemetry, status, history, connect, setSpeed, disconnect }
 }
