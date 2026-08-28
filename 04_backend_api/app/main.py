@@ -13,6 +13,7 @@ Then:
 """
 from __future__ import annotations
 import statistics as stats
+import os
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,14 +30,26 @@ app = FastAPI(title="ADAS SIH Backend", version="1.0")
 
 # Allow the React dashboard (running on a different port/origin) to call this API.
 # Tighten allow_origins to your deployed frontend URL before submission.
+FRONTEND_ORIGINS = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv("FRONTEND_ORIGINS", "*").split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=FRONTEND_ORIGINS,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 MAX_STEPS = 300  # 30s of sim time at dt=0.1, mirrors run_all.py's cap
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok", "service": "adas-backend"}
 
 
 @app.get("/api/scenarios")
