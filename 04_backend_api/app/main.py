@@ -14,6 +14,7 @@ Then:
 from __future__ import annotations
 import statistics as stats
 import os
+import asyncio
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -110,9 +111,15 @@ def metrics_summary(db: Session = Depends(get_db)):
 
 @app.websocket("/ws/live/{scenario_name}")
 async def live_stream(ws: WebSocket, scenario_name: str, seed: int | None = None):
-    """Streams one tick of telemetry per message as the scenario runs live.
-    On completion, persists a Run row (with per-tick snapshots) to the DB
-    automatically, so a live-demo run also becomes queryable history."""
+    """Stream live telemetry with a browser-controlled simulation playback speed.
+
+    The MATLAB browser demo had a SIM SPEED control (0.5x/1x/2x/4x).
+    The original FastAPI stream sent all 0.1 s simulation ticks as fast as the
+    server could compute them, so the car appeared to race across the screen.
+    Here the client can send {"type":"set_speed","value":0.5..4.0} while the
+    run is active. The simulation clock remains physically correct (DT=0.1s);
+    only real-time playback pacing changes.
+    """
     if scenario_name not in ALL_SCENARIOS:
         await ws.close(code=4004, reason=f"Unknown scenario '{scenario_name}'")
         return
@@ -121,10 +128,35 @@ async def live_stream(ws: WebSocket, scenario_name: str, seed: int | None = None
     pipe = DrivingPipeline(scenario_name, seed=seed)
     latencies = []
     db = next(get_db())
+    speed_multiplier = 1.0
+    disconnected = asyncio.Event()
+
+    async def receive_controls():
+        nonlocal speed_multiplier
+        try:
+            while True:
+                message = await ws.receive_json()
+                if not isinstance(message, dict):
+                    continue
+                if message.get("type") == "set_speed":
+                    try:
+                        value = float(message.get("value", 1.0))
+                        if value != value or value in (float("inf"), float("-inf")):
+                            continue
+                        speed_multiplier = max(0.25, min(4.0, value))
+                    except (TypeError, ValueError):
+                        continue
+        except (WebSocketDisconnect, RuntimeError):
+            disconnected.set()
+
+    control_task = asyncio.create_task(receive_controls())
 
     try:
         run_row = None
         for _ in range(MAX_STEPS):
+            if disconnected.is_set():
+                break
+
             telem = pipe.step()
             if telem.replan_latency_ms > 0:
                 latencies.append(telem.replan_latency_ms)
@@ -143,8 +175,12 @@ async def live_stream(ws: WebSocket, scenario_name: str, seed: int | None = None
             if telem.done:
                 break
 
+            # One simulation tick is DT seconds of simulated time. Pacing at
+            # DT/speed means 1x matches the MATLAB demo, 0.5x is slower, etc.
+            await asyncio.sleep(0.1 / speed_multiplier)
+
         # finalize the run row with summary metrics now that the sim has ended
-        if run_row is not None:
+        if run_row is not None and not disconnected.is_set():
             run_row.completed = telem.done and not telem.collision
             run_row.collision = telem.collision
             run_row.sim_time_s = telem.t
@@ -159,4 +195,9 @@ async def live_stream(ws: WebSocket, scenario_name: str, seed: int | None = None
     except WebSocketDisconnect:
         pass
     finally:
+        control_task.cancel()
+        try:
+            await control_task
+        except asyncio.CancelledError:
+            pass
         db.close()
