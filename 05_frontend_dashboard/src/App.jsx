@@ -1,5 +1,5 @@
 // App.jsx
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useSimulationSocket } from './hooks/useSimulationSocket'
 import SimulationCanvas from './components/SimulationCanvas'
 import MetricsPanel from './components/MetricsPanel'
@@ -18,20 +18,23 @@ const TITLES = {
 export default function App() {
   const [scenario, setScenario] = useState('village_road')
   const [refreshKey, setRefreshKey] = useState(0)
-  const { telemetry, status, history, connect, disconnect } = useSimulationSocket()
+  const [speed, setSpeed] = useState(1)
+  const { telemetry, status, history, connect, setSpeed: sendSpeed, disconnect } = useSimulationSocket()
 
   const handleStart = useCallback(() => {
-    connect(scenario)
-  }, [connect, scenario])
+    connect(scenario, undefined, speed)
+  }, [connect, scenario, speed])
 
   const handleStop = useCallback(() => {
     disconnect()
   }, [disconnect])
 
-  // when a run finishes, bump refreshKey so MetricsSummary re-pulls from the DB
-  if (telemetry?.done && status === 'open') {
-    setTimeout(() => setRefreshKey((k) => k + 1), 300)
-  }
+  // Refresh history once after a run completes. Keep side effects out of render.
+  useEffect(() => {
+    if (!telemetry?.done) return
+    const timer = setTimeout(() => setRefreshKey((k) => k + 1), 300)
+    return () => clearTimeout(timer)
+  }, [telemetry?.done])
 
   return (
     <div className="wrap">
@@ -50,6 +53,12 @@ export default function App() {
           onStart={handleStart}
           onStop={handleStop}
           done={telemetry?.done}
+          speed={speed}
+          onSpeedChange={(value) => {
+            const next = Number(value)
+            setSpeed(next)
+            sendSpeed(next)
+          }}
         />
       </div>
 
