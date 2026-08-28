@@ -1,0 +1,77 @@
+:root{
+  --bg:#0B0E11;
+  --panel:#12161C;
+  --panel2:#181D25;
+  --line:#232A34;
+  --text:#D9E1E8;
+  --dim:#69788A;
+  --accent:#2DD4BF;
+  --warn:#FFB020;
+  --danger:#EF4444;
+  --road:#1B2027;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+  font-family:'Inter',system-ui,-apple-system,sans-serif;}
+.mono{font-family:'JetBrains Mono',ui-monospace,monospace;}
+
+.wrap{display:grid;grid-template-columns:1fr 340px;gap:1px;height:100vh;background:var(--line);}
+@media (max-width:900px){.wrap{grid-template-columns:1fr;height:auto;}}
+
+.stage{background:var(--bg);display:flex;flex-direction:column;min-width:0;}
+.stagehead{padding:14px 18px 10px;border-bottom:1px solid var(--line);}
+.eyebrow{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;
+  color:var(--dim);text-transform:uppercase;}
+.title{font-size:19px;font-weight:600;margin-top:3px;letter-spacing:-.01em;}
+.canvaswrap{flex:1;display:flex;align-items:center;justify-content:center;padding:10px;min-height:340px;}
+.sim-canvas{background:var(--road);border-radius:4px;max-width:100%;max-height:100%;}
+
+.transport{display:flex;gap:8px;align-items:center;padding:12px 18px;border-top:1px solid var(--line);}
+button{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:6px;
+  padding:8px 14px;font-family:inherit;font-size:13px;cursor:pointer;transition:border-color .15s;}
+button:hover{border-color:var(--accent);}
+button:disabled{opacity:.5;cursor:not-allowed;}
+button.primary{background:var(--accent);color:#06201C;border-color:var(--accent);font-weight:600;}
+button.primary:hover{opacity:.9;}
+.spacer{flex:1;}
+select{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:6px;
+  padding:8px 10px;font-family:inherit;font-size:13px;}
+select:disabled{opacity:.6;}
+
+.conn-pill{font-family:'JetBrains Mono',monospace;font-size:10.5px;text-transform:uppercase;
+  letter-spacing:.06em;padding:5px 10px;border-radius:999px;border:1px solid var(--line);color:var(--dim);}
+.conn-open{color:var(--accent);border-color:var(--accent);background:rgba(45,212,191,.1);}
+.conn-connecting{color:var(--warn);border-color:var(--warn);background:rgba(255,176,32,.1);}
+.conn-error{color:var(--danger);border-color:var(--danger);background:rgba(239,68,68,.1);}
+.conn-closed,.conn-idle{color:var(--dim);}
+
+.panel{background:var(--panel);padding:18px;overflow-y:auto;}
+.panel h2{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);
+  margin:0 0 10px;font-family:'JetBrains Mono',monospace;}
+.block{margin-bottom:22px;}
+
+.modebadge{display:inline-flex;align-items:center;gap:8px;padding:7px 12px;border-radius:6px;
+  font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;border:1px solid var(--line);
+  background:var(--panel2);}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--accent);}
+
+.metric-row{display:flex;justify-content:space-between;align-items:baseline;padding:7px 0;
+  border-bottom:1px solid var(--line);}
+.metric-row:last-child{border-bottom:none;}
+.metric-label{font-size:12.5px;color:var(--dim);}
+.metric-val{font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:600;}
+
+.legend{display:flex;flex-direction:column;gap:6px;}
+.legend-item{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--dim);}
+.swatch{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+
+.note{font-size:11.5px;color:var(--dim);line-height:1.5;margin-top:4px;}
+
+.summary-row{padding:8px 0;border-bottom:1px solid var(--line);}
+.summary-name{font-size:12px;color:var(--text);margin-bottom:6px;}
+.summary-bars{display:flex;gap:6px;flex-wrap:wrap;}
+.chip{font-family:'JetBrains Mono',monospace;font-size:10.5px;padding:3px 8px;border-radius:5px;
+  background:var(--panel2);border:1px solid var(--line);color:var(--dim);}
+.chip-ok{color:var(--accent);border-color:rgba(45,212,191,.4);}
+.chip-bad{color:var(--danger);border-color:rgba(239,68,68,.4);}
+.refresh-btn{margin-top:10px;width:100%;font-size:11.5px;}

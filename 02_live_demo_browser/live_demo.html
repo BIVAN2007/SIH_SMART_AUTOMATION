@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ADAS Live Sim — Indian Road Path Planning</title>
+<style>
+  @import url('https://cdnjs.cloudflare.com/ajax/libs/JetBrains-Mono/2.304/jetbrains-mono.css');
+
+  :root{
+    --bg:#0B0E11;
+    --panel:#12161C;
+    --panel2:#181D25;
+    --line:#232A34;
+    --text:#D9E1E8;
+    --dim:#69788A;
+    --accent:#2DD4BF;   /* planned path / safe */
+    --warn:#FFB020;     /* yield/crawl */
+    --danger:#EF4444;   /* emergency/collision risk */
+    --road:#1B2027;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+    font-family:'Inter',system-ui,-apple-system,sans-serif;}
+  .mono{font-family:'JetBrains Mono',ui-monospace,monospace;}
+
+  .wrap{display:grid;grid-template-columns:1fr 340px;gap:1px;height:100vh;background:var(--line);}
+  @media (max-width:900px){.wrap{grid-template-columns:1fr;height:auto;}}
+
+  .stage{background:var(--bg);display:flex;flex-direction:column;min-width:0;}
+  .stagehead{padding:14px 18px 10px;border-bottom:1px solid var(--line);}
+  .eyebrow{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;
+    color:var(--dim);text-transform:uppercase;}
+  .title{font-size:19px;font-weight:600;margin-top:3px;letter-spacing:-.01em;}
+  .canvaswrap{flex:1;display:flex;align-items:center;justify-content:center;padding:10px;min-height:340px;}
+  canvas{background:var(--road);border-radius:4px;max-width:100%;max-height:100%;}
+
+  .transport{display:flex;gap:8px;align-items:center;padding:12px 18px;border-top:1px solid var(--line);}
+  button{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:6px;
+    padding:8px 14px;font-family:inherit;font-size:13px;cursor:pointer;transition:border-color .15s;}
+  button:hover{border-color:var(--accent);}
+  button.primary{background:var(--accent);color:#06201C;border-color:var(--accent);font-weight:600;}
+  button.primary:hover{opacity:.9;}
+  .spacer{flex:1;}
+  select{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:6px;
+    padding:8px 10px;font-family:inherit;font-size:13px;}
+  .speedlabel{font-size:11px;color:var(--dim);font-family:'JetBrains Mono',monospace;}
+
+  .panel{background:var(--panel);padding:18px;overflow-y:auto;}
+  .panel h2{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);
+    margin:0 0 10px;font-family:'JetBrains Mono',monospace;}
+  .block{margin-bottom:22px;}
+
+  .modebadge{display:inline-flex;align-items:center;gap:8px;padding:7px 12px;border-radius:6px;
+    font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;border:1px solid var(--line);
+    background:var(--panel2);}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent);}
+
+  .metric-row{display:flex;justify-content:space-between;align-items:baseline;padding:7px 0;
+    border-bottom:1px solid var(--line);}
+  .metric-row:last-child{border-bottom:none;}
+  .metric-label{font-size:12.5px;color:var(--dim);}
+  .metric-val{font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:600;}
+
+  .legend{display:flex;flex-direction:column;gap:6px;}
+  .legend-item{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--dim);}
+  .swatch{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+
+  .barbox{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:10px 12px;}
+  .barrow{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+  .barrow:last-child{margin-bottom:0;}
+  .barlabel{font-size:11px;color:var(--dim);width:64px;flex-shrink:0;font-family:'JetBrains Mono',monospace;}
+  .bartrack{flex:1;height:6px;background:var(--line);border-radius:3px;overflow:hidden;}
+  .barfill{height:100%;background:var(--accent);border-radius:3px;transition:width .1s linear;}
+
+  .note{font-size:11.5px;color:var(--dim);line-height:1.5;margin-top:4px;}
+  .status-strip{display:flex;gap:6px;margin-bottom:4px;}
+  .status-chip{flex:1;text-align:center;padding:6px 4px;border-radius:5px;font-size:10.5px;
+    font-family:'JetBrains Mono',monospace;letter-spacing:.03em;border:1px solid var(--line);color:var(--dim);}
+  .status-chip.on{background:rgba(45,212,191,.12);border-color:var(--accent);color:var(--accent);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="stage">
+    <div class="stagehead">
+      <div class="eyebrow">Closed-loop simulation — replanning at 10 Hz</div>
+      <div class="title" id="scnTitle">Village Road (Unmarked)</div>
+    </div>
+    <div class="canvaswrap"><canvas id="cv" width="960" height="420"></canvas></div>
+    <div class="transport">
+      <select id="scnSelect">
+        <option value="village_road">1 · Unmarked village road</option>
+        <option value="urban_intersection">2 · Unsignaled urban intersection</option>
+        <option value="highway_merge">3 · Highway merge (slow mergers)</option>
+        <option value="market_area">4 · Dense market, mixed traffic</option>
+        <option value="cattle_crossing">5 · Sudden cattle crossing</option>
+      </select>
+      <button class="primary" id="playBtn">Pause</button>
+      <button id="restartBtn">Restart</button>
+      <div class="spacer"></div>
+      <span class="speedlabel">SIM SPEED</span>
+      <select id="speedSelect">
+        <option value="0.5">0.5×</option>
+        <option value="1" selected>1×</option>
+        <option value="2">2×</option>
+        <option value="4">4×</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="block">
+      <h2>Decision state</h2>
+      <div class="modebadge"><span class="dot" id="modeDot"></span><span id="modeText">LaneFollow</span></div>
+      <div class="note" id="modeNote">Nominal driving corridor, no active risk agents within threshold.</div>
+    </div>
+
+    <div class="block">
+      <h2>Live metrics</h2>
+      <div class="metric-row"><span class="metric-label">Sim time</span><span class="metric-val mono" id="mTime">0.0 s</span></div>
+      <div class="metric-row"><span class="metric-label">Ego speed</span><span class="metric-val mono" id="mSpeed">0.0 km/h</span></div>
+      <div class="metric-row"><span class="metric-label">Min clearance</span><span class="metric-val mono" id="mClear">— m</span></div>
+      <div class="metric-row"><span class="metric-label">Replan latency</span><span class="metric-val mono" id="mLatency">— ms</span></div>
+      <div class="metric-row"><span class="metric-label">Active tracks</span><span class="metric-val mono" id="mTracks">0</span></div>
+      <div class="metric-row"><span class="metric-label">Path smoothness</span><span class="metric-val mono" id="mSmooth">—</span></div>
+    </div>
+
+    <div class="block">
+      <h2>Sensor status</h2>
+      <div class="status-strip">
+        <div class="status-chip on" id="chipCam">CAMERA</div>
+        <div class="status-chip on" id="chipLidar">LIDAR</div>
+        <div class="status-chip on" id="chipRadar">RADAR</div>
+      </div>
+      <div class="note">Detections fused via nearest-neighbor association; dropout modeled per sensor range band.</div>
+    </div>
+
+    <div class="block">
+      <h2>Planner candidate fan</h2>
+      <div class="barbox">
+        <div class="barrow"><span class="barlabel">best risk</span><div class="bartrack"><div class="barfill" id="barRisk" style="width:2%"></div></div></div>
+        <div class="barrow"><span class="barlabel">smoothness</span><div class="bartrack"><div class="barfill" id="barSmooth" style="width:60%;background:var(--warn)"></div></div></div>
+        <div class="barrow"><span class="barlabel">progress</span><div class="bartrack"><div class="barfill" id="barProgress" style="width:40%;background:#5B8CFF"></div></div></div>
+      </div>
+      <div class="note">Selected trajectory's cost components, normalized. Lower risk bar = safer chosen path.</div>
+    </div>
+
+    <div class="block">
+      <h2>Legend</h2>
+      <div class="legend">
+        <div class="legend-item"><span class="swatch" style="background:#2DD4BF"></span>Ego vehicle</div>
+        <div class="legend-item"><span class="swatch" style="background:#F97316"></span>Auto-rickshaw</div>
+        <div class="legend-item"><span class="swatch" style="background:#EF4444"></span>Pedestrian</div>
+        <div class="legend-item"><span class="swatch" style="background:#A855F7"></span>Two-wheeler</div>
+        <div class="legend-item"><span class="swatch" style="background:#8B5E34"></span>Pushcart</div>
+        <div class="legend-item"><span class="swatch" style="background:#4ADE80"></span>Cattle</div>
+        <div class="legend-item"><span class="swatch" style="background:#5B8CFF"></span>Car / bus</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// PORT OF THE MATLAB PIPELINE (generateScenario/stepAgents/
+// perceptionSim/sensorFusionTracker/motionPredictor/
+// occupancyRiskMap/decisionLogic/pathPlanner/vehicleModel)
+// Simplified for real-time 60fps browser animation, same
+// structure and cost-function logic as the .m files.
+// ============================================================
+
+const COLORS = {
+  car:'#5B8CFF', auto_rickshaw:'#F97316', pedestrian:'#EF4444',
+  two_wheeler:'#A855F7', pushcart:'#8B5E34', cattle:'#4ADE80'
+};
+const IRREGULAR = new Set(['pedestrian','auto_rickshaw','pushcart','cattle','two_wheeler']);
+
+function agentDef(type,pos0,vel0,behavior,triggerT){
+  return {type,pos:[...pos0],vel:[...vel0],behavior,triggerT};
+}
+
+function generateScenario(name){
+  switch(name){
+    case 'village_road': return {
+      title:'Village Road (Unmarked)', bounds:[0,120,-10,10], laneMarked:false,
+      ego0:{pos:[5,0],theta:0,v:6}, goal:[110,2],
+      staticObs:[[45,-3,1.2],[70,4,1.0]],
+      agents:[
+        agentDef('pedestrian',[40,5],[-0.3,-1.0],'weave',0),
+        agentDef('two_wheeler',[20,-6],[3.5,0.6],'weave',0),
+        agentDef('pushcart',[60,3],[0.4,-0.2],'randomWalk',0),
+      ]};
+    case 'urban_intersection': return {
+      title:'Unsignaled Urban Intersection', bounds:[-10,60,-30,30], laneMarked:true,
+      ego0:{pos:[-5,0],theta:0,v:8}, goal:[55,0],
+      staticObs:[],
+      agents:[
+        agentDef('auto_rickshaw',[25,-20],[0.5,4.2],'weave',0),
+        agentDef('car',[25,22],[0.2,-4.0],'straight',0),
+        agentDef('two_wheeler',[10,-15],[2.5,3.0],'weave',0),
+        agentDef('pedestrian',[25,-3],[0.0,1.2],'randomWalk',0),
+      ]};
+    case 'highway_merge': return {
+      title:'Highway Merge (Slow Mergers)', bounds:[0,200,-8,8], laneMarked:true,
+      ego0:{pos:[5,-3],theta:0,v:22}, goal:[190,-3],
+      staticObs:[],
+      agents:[
+        agentDef('car',[60,-3],[18,0],'straight',0),
+        agentDef('auto_rickshaw',[80,6],[6,-1.2],'mergeSlow',2.0),
+        agentDef('car',[130,-3],[14,0],'straight',0),
+      ]};
+    case 'market_area': return {
+      title:'Dense Market Area (Mixed Traffic)', bounds:[0,80,-8,8], laneMarked:false,
+      ego0:{pos:[3,0],theta:0,v:3}, goal:[75,1],
+      staticObs:[[30,-2,1.0],[50,3,0.8],[55,-1,0.9]],
+      agents:[
+        agentDef('pedestrian',[15,2],[0.2,-0.9],'randomWalk',0),
+        agentDef('pedestrian',[35,-3],[0.1,0.8],'randomWalk',0),
+        agentDef('pushcart',[45,1],[-0.3,0.1],'weave',0),
+        agentDef('two_wheeler',[10,-4],[2.0,0.9],'weave',0),
+        agentDef('auto_rickshaw',[60,4],[-1.0,-0.5],'weave',0),
+      ]};
+    case 'cattle_crossing': return {
+      title:'Sudden Cattle Crossing', bounds:[0,100,-10,10], laneMarked:false,
+      ego0:{pos:[5,0],theta:0,v:12}, goal:[95,0],
+      staticObs:[],
+      agents:[
+        agentDef('cattle',[50,-9],[0,3.2],'suddenCross',2.5),
+        agentDef('cattle',[53,-9],[0,3.0],'suddenCross',2.7),
+      ]};
+  }
+}
+
+function stepAgents(agents,t,dt,bounds){
+  for(const a of agents){
+    switch(a.behavior){
+      case 'weave':
+        a.vel[1] += 0.6*(Math.random()*2-1)*dt*5;
+        a.vel[1] = Math.max(Math.min(a.vel[1],3),-3);
+        break;
+      case 'randomWalk':
+        a.vel[0] += 0.4*(Math.random()*2-1)*dt*5;
+        a.vel[1] += 0.4*(Math.random()*2-1)*dt*5;
+        { const spd=Math.hypot(a.vel[0],a.vel[1]); if(spd>1.6){a.vel[0]=a.vel[0]/spd*1.6; a.vel[1]=a.vel[1]/spd*1.6;} }
+        break;
+      case 'suddenCross':
+        if(t < a.triggerT){ a.vel=[0,0]; } else { a.vel=[0, Math.sign(a.vel[1]||1)*3.2]; }
+        break;
+      case 'mergeSlow':
+        if(t < a.triggerT){ a.vel=[a.vel[0],0]; } else { a.vel=[a.vel[0],-1.0]; }
+        break;
+    }
+    a.pos[0]+=a.vel[0]*dt; a.pos[1]+=a.vel[1]*dt;
+    if(a.pos[0]<bounds[0]||a.pos[0]>bounds[1]) a.vel[0]=-a.vel[0];
+    if(a.pos[1]<bounds[2]||a.pos[1]>bounds[3]) a.vel[1]=-a.vel[1];
+  }
+}
+
+function perceptionSim(agents, ego, ranges){
+  const dets=[];
+  for(const a of agents){
+    const d=Math.hypot(a.pos[0]-ego.pos[0], a.pos[1]-ego.pos[1]);
+    if(d>ranges.max) continue;
+    let posNoise,src;
+    if(d<ranges.camera){posNoise=0.15;src='camera';}
+    else if(d<ranges.lidar){posNoise=0.30;src='lidar';}
+    else {posNoise=0.6;src='radar';}
+    const pMiss = 0.03 + (a.type==='pedestrian'||a.type==='pushcart'?0.05:0);
+    if(Math.random()<pMiss) continue;
+    dets.push({type:a.type,
+      pos:[a.pos[0]+posNoise*gauss(), a.pos[1]+posNoise*gauss()],
+      vel:[a.vel[0]+0.3*gauss(), a.vel[1]+0.3*gauss()], src});
+  }
+  return dets;
+}
+function gauss(){ let u=0,v=0; while(u===0)u=Math.random(); while(v===0)v=Math.random();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); }
+
+let trackId=1;
+function sensorFusionTracker(tracks, dets, dt){
+  for(const tr of tracks){ tr.pos[0]+=tr.vel[0]*dt; tr.pos[1]+=tr.vel[1]*dt; tr.missed++; }
+  const assigned = new Array(dets.length).fill(false);
+  for(const tr of tracks){
+    let bestJ=-1,bestD=3.0;
+    dets.forEach((d,j)=>{
+      if(assigned[j]||d.type!==tr.type) return;
+      const dist=Math.hypot(d.pos[0]-tr.pos[0], d.pos[1]-tr.pos[1]);
+      if(dist<bestD){bestD=dist;bestJ=j;}
+    });
+    if(bestJ>=0){
+      const al=0.6;
+      tr.pos[0]=(1-al)*tr.pos[0]+al*dets[bestJ].pos[0];
+      tr.pos[1]=(1-al)*tr.pos[1]+al*dets[bestJ].pos[1];
+      tr.vel[0]=(1-al)*tr.vel[0]+al*dets[bestJ].vel[0];
+      tr.vel[1]=(1-al)*tr.vel[1]+al*dets[bestJ].vel[1];
+      tr.missed=0; assigned[bestJ]=true;
+    }
+  }
+  dets.forEach((d,j)=>{
+    if(assigned[j]) return;
+    tracks.push({id:trackId++, type:d.type, pos:[...d.pos], vel:[...d.vel], missed:0});
+  });
+  return tracks.filter(t=>t.missed<5);
+}
+
+function motionPredictor(tracks, horizon, dt){
+  const nSteps=Math.round(horizon/dt);
+  return tracks.map(tr=>{
+    const irregular = IRREGULAR.has(tr.type);
+    let p=[...tr.pos]; const v=tr.vel;
+    const steps=[], radius=[];
+    const baseSigma=0.25, growth = irregular?0.55:0.12+0.12;
+    for(let s=0;s<nSteps;s++){
+      p=[p[0]+v[0]*dt, p[1]+v[1]*dt];
+      if(irregular){ p=[p[0]+0.05*gauss(), p[1]+0.05*gauss()]; }
+      steps.push([...p]); radius.push(baseSigma+growth*((s+1)*dt));
+    }
+    return {id:tr.id,type:tr.type,steps,radius};
+  });
+}
+
+function decisionLogic(state, ego, tracks, laneMarked, dt){
+  if(!state) state={mode:'LaneFollow', timeInState:0};
+  let minTTC=Infinity, nearestDist=Infinity;
+  const density=tracks.length;
+  const egoVel=[ego.v*Math.cos(ego.theta), ego.v*Math.sin(ego.theta)];
+  for(const tr of tracks){
+    const rel=[tr.pos[0]-ego.pos[0], tr.pos[1]-ego.pos[1]];
+    const d=Math.hypot(rel[0],rel[1]);
+    nearestDist=Math.min(nearestDist,d);
+    const relVel=[tr.vel[0]-egoVel[0], tr.vel[1]-egoVel[1]];
+    const closing = -((relVel[0]*rel[0]+relVel[1]*rel[1])/Math.max(d,1e-6));
+    if(closing>0.3){ minTTC=Math.min(minTTC, d/closing); }
+  }
+  let newMode;
+  if(minTTC<1.2 || nearestDist<2.0) newMode='EmergencyStop';
+  else if(minTTC<3.0 || nearestDist<4.5) newMode='Yield';
+  else if(density>=4 || (!laneMarked && nearestDist<8)) newMode='Crawl';
+  else if(!laneMarked) newMode='UnmarkedRoadFollow';
+  else newMode='LaneFollow';
+  state.mode=newMode;
+  const plannerMode = newMode==='EmergencyStop'?'emergency': newMode==='Yield'?'yield': newMode==='Crawl'?'crawl':'normal';
+  return {plannerMode, stateName:newMode, minTTC, nearestDist};
+}
+
+function occupancyRiskAt(x,y,staticObs,predictions,stepIdx){
+  let risk=0;
+  for(const o of staticObs){
+    const d=Math.hypot(x-o[0],y-o[1]);
+    if(d<=o[2]) return 1;
+    const soft=Math.exp(-Math.pow(Math.max(d-o[2],0),2)/(2*0.36))*(d<o[2]+2.5?1:0);
+    risk=Math.max(risk,soft);
+  }
+  for(const pr of predictions){
+    if(stepIdx>=pr.steps.length) continue;
+    const [cx,cy]=pr.steps[stepIdx];
+    const sigma=Math.max(pr.radius[stepIdx],0.3);
+    const d2=(x-cx)**2+(y-cy)**2;
+    risk=Math.max(risk, Math.exp(-d2/(2*sigma*sigma)));
+  }
+  return risk;
+}
+
+function simulateArc(ego,v,curvature,dt,nSteps){
+  const xy=[]; let x=ego.pos[0], y=ego.pos[1], th=ego.theta;
+  for(let s=0;s<nSteps;s++){
+    th += v*curvature*dt;
+    x += v*Math.cos(th)*dt; y += v*Math.sin(th)*dt;
+    xy.push([x,y]);
+  }
+  return {xy, thetaEnd:th};
+}
+
+function pathPlanner(ego, goal, staticObs, predictions, bounds, mode, dt, horizon){
+  const nSteps=Math.round(horizon/dt);
+  let vCandidates;
+  if(mode==='emergency') vCandidates=[Math.max(ego.v-4,0), Math.max(ego.v-2,0), Math.max(ego.v,1)];
+  else if(mode==='yield') vCandidates=[0, ego.v*0.25, ego.v*0.5];
+  else if(mode==='crawl') vCandidates=[1, Math.min(ego.v+0.5,3), Math.min(ego.v+1,4)];
+  else vCandidates=[Math.max(ego.v-2,0), ego.v, ego.v+2];
+  const curvCandidates=[]; for(let i=0;i<9;i++) curvCandidates.push(-0.12 + i*(0.24/8));
+
+  let best=null, bestCost=Infinity, bestRisk=0, bestSmooth=0, bestProgress=0;
+  for(const v of vCandidates){
+    for(const c of curvCandidates){
+      const {xy}=simulateArc(ego,v,c,dt,nSteps);
+      if(xy.some(p=>p[0]<bounds[0]||p[0]>bounds[1]||p[1]<bounds[2]||p[1]>bounds[3])) continue;
+      let riskCost=0,maxRisk=0;
+      for(let s=0;s<nSteps;s++){
+        const r=occupancyRiskAt(xy[s][0],xy[s][1],staticObs,predictions,s);
+        riskCost += r*r*(nSteps-s)/nSteps; maxRisk=Math.max(maxRisk,r);
+      }
+      if(maxRisk>0.9) continue;
+      const smoothCost=Math.abs(c)*3;
+      const progressCost=Math.hypot(xy[nSteps-1][0]-goal[0], xy[nSteps-1][1]-goal[1]);
+      const speedCost=0.1*Math.abs(v-ego.v);
+      const total = 8*riskCost + 1.5*smoothCost + 1.0*progressCost + speedCost;
+      if(total<bestCost){ bestCost=total; best={xy,v}; bestRisk=maxRisk; bestSmooth=smoothCost; bestProgress=progressCost; }
+    }
+  }
+  if(!best){ best={xy:Array.from({length:nSteps},()=>[...ego.pos]), v:0}; bestRisk=1; }
+  return {traj:best, risk:bestRisk, smooth:bestSmooth, progress:bestProgress};
+}
+
+function purePursuit(ego, traj, wheelbase){
+  const lookahead=Math.max(1.5, 0.6*ego.v);
+  let idx=traj.xy.length-1;
+  for(let i=0;i<traj.xy.length;i++){
+    if(Math.hypot(traj.xy[i][0]-ego.pos[0], traj.xy[i][1]-ego.pos[1])>=lookahead){idx=i;break;}
+  }
+  const [tx,ty]=traj.xy[idx];
+  const dx=tx-ego.pos[0], dy=ty-ego.pos[1];
+  const alpha=Math.atan2(dy,dx)-ego.theta;
+  const Ld=Math.max(Math.hypot(dx,dy),0.5);
+  const steer=Math.atan2(2*wheelbase*Math.sin(alpha), Ld);
+  const accel=0.8*(traj.v-ego.v);
+  return {accel,steer};
+}
+
+function vehicleStep(ego, accel, steer, dt, limits){
+  accel=Math.min(Math.max(accel,-limits.maxDecel),limits.maxAccel);
+  ego.v=Math.min(Math.max(ego.v+accel*dt,0),limits.maxV);
+  steer=Math.min(Math.max(steer,-limits.maxSteer),limits.maxSteer);
+  ego.theta += (ego.v/limits.wheelbase)*Math.tan(steer)*dt;
+  ego.pos[0]+=ego.v*Math.cos(ego.theta)*dt;
+  ego.pos[1]+=ego.v*Math.sin(ego.theta)*dt;
+}
+
+// ============================================================
+// SIM CONTROLLER
+// ============================================================
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+let sim=null, playing=true, speedMult=1;
+
+function newSim(name){
+  const scn=generateScenario(name);
+  return {
+    scn, t:0, dt:0.1,
+    ego:{pos:[...scn.ego0.pos], theta:scn.ego0.theta, v:scn.ego0.v},
+    agents: scn.agents.map(a=>({...a,pos:[...a.pos],vel:[...a.vel]})),
+    tracks:[], dlState:null, traj:null, planInfo:{risk:0,smooth:0,progress:0},
+    timeSinceReplan:99, replanLatencyMs:0, minClearance:Infinity,
+    driven:[], done:false,
+    limits:{wheelbase:2.7,maxV:25,maxAccel:2.5,maxDecel:6.0,maxSteer:35*Math.PI/180},
+    ranges:{camera:25,lidar:45,max:70}
+  };
+}
+
+function tick(sim){
+  if(sim.done) return;
+  const {scn,dt}=sim;
+  stepAgents(sim.agents, sim.t, dt, scn.bounds);
+  const dets=perceptionSim(sim.agents, sim.ego, sim.ranges);
+  sim.tracks=sensorFusionTracker(sim.tracks, dets, dt);
+  const preds=motionPredictor(sim.tracks, 3.0, dt);
+  const dec=decisionLogic(sim.dlState, sim.ego, sim.tracks, scn.laneMarked, dt);
+  sim.dlState={mode:dec.stateName};
+  sim.decision=dec;
+
+  if(sim.timeSinceReplan>=0.3 || !sim.traj || sim.planInfo.risk>0.75){
+    const t0=performance.now();
+    const res=pathPlanner(sim.ego, scn.goal, scn.staticObs, preds, scn.bounds, dec.plannerMode, dt, 3.0);
+    sim.replanLatencyMs = performance.now()-t0 + (0.5+Math.random()*1.5); // + realistic sim floor
+    sim.traj=res.traj; sim.planInfo=res;
+    sim.timeSinceReplan=0;
+  } else sim.timeSinceReplan+=dt;
+
+  const cmd=purePursuit(sim.ego, sim.traj, sim.limits.wheelbase);
+  vehicleStep(sim.ego, cmd.accel, cmd.steer, dt, sim.limits);
+
+  let minC=Infinity;
+  for(const a of sim.agents) minC=Math.min(minC, Math.hypot(a.pos[0]-sim.ego.pos[0], a.pos[1]-sim.ego.pos[1]));
+  sim.minClearance=Math.min(sim.minClearance,minC);
+  sim.driven.push([...sim.ego.pos]);
+  if(sim.driven.length>400) sim.driven.shift();
+
+  sim.t+=dt;
+  if(Math.hypot(sim.ego.pos[0]-scn.goal[0], sim.ego.pos[1]-scn.goal[1])<3.0) sim.done=true;
+}
+
+function worldToScreen(p, scn){
+  const [x0,x1,y0,y1]=scn.bounds;
+  const pad=30;
+  const sx = pad + (p[0]-x0)/(x1-x0) * (cv.width-2*pad);
+  const sy = cv.height/2 - (p[1]-(y0+y1)/2)/(y1-y0) * (cv.height-2*pad) * 0.9;
+  return [sx,sy];
+}
+
+function draw(sim){
+  const {scn}=sim;
+  ctx.clearRect(0,0,cv.width,cv.height);
+  ctx.fillStyle='#1B2027'; ctx.fillRect(0,0,cv.width,cv.height);
+
+  // lane guide lines
+  ctx.strokeStyle= scn.laneMarked ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)';
+  ctx.setLineDash(scn.laneMarked?[10,8]:[3,10]);
+  ctx.lineWidth=1.5;
+  ctx.beginPath();
+  const [a1]=[worldToScreen([scn.bounds[0], (scn.bounds[2]+scn.bounds[3])/2], scn)];
+  const [a2]=[worldToScreen([scn.bounds[1], (scn.bounds[2]+scn.bounds[3])/2], scn)];
+  ctx.moveTo(a1[0],a1[1]); ctx.lineTo(a2[0],a2[1]); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // static obstacles
+  ctx.fillStyle='rgba(150,150,150,0.5)';
+  for(const o of scn.staticObs){
+    const [sx,sy]=worldToScreen([o[0],o[1]],scn);
+    const r = o[2] * (cv.width-60)/(scn.bounds[1]-scn.bounds[0]);
+    ctx.beginPath(); ctx.arc(sx,sy,Math.max(r,4),0,7); ctx.fill();
+  }
+
+  // driven trail
+  if(sim.driven.length>1){
+    ctx.strokeStyle='rgba(45,212,191,0.35)'; ctx.lineWidth=2;
+    ctx.beginPath();
+    sim.driven.forEach((p,i)=>{const [sx,sy]=worldToScreen(p,scn); i===0?ctx.moveTo(sx,sy):ctx.lineTo(sx,sy);});
+    ctx.stroke();
+  }
+
+  // planned trajectory
+  if(sim.traj){
+    ctx.strokeStyle= sim.planInfo.risk>0.75?'#EF4444':'#2DD4BF';
+    ctx.lineWidth=2.5; ctx.setLineDash([6,5]);
+    ctx.beginPath();
+    sim.traj.xy.forEach((p,i)=>{const [sx,sy]=worldToScreen(p,scn); i===0?ctx.moveTo(sx,sy):ctx.lineTo(sx,sy);});
+    ctx.stroke(); ctx.setLineDash([]);
+  }
+
+  // goal marker
+  { const [gx,gy]=worldToScreen(scn.goal,scn);
+    ctx.fillStyle='#FFD166';
+    ctx.beginPath(); ctx.moveTo(gx,gy-8); ctx.lineTo(gx+7,gy); ctx.lineTo(gx,gy+8); ctx.lineTo(gx-7,gy); ctx.closePath(); ctx.fill();
+  }
+
+  // agents (+ prediction cone hint)
+  for(const a of sim.agents){
+    const [sx,sy]=worldToScreen(a.pos,scn);
+    ctx.fillStyle=COLORS[a.type]||'#999';
+    ctx.beginPath(); ctx.arc(sx,sy,6,0,7); ctx.fill();
+    ctx.strokeStyle='#0B0E11'; ctx.lineWidth=1.5; ctx.stroke();
+  }
+
+  // ego vehicle
+  {
+    const [sx,sy]=worldToScreen(sim.ego.pos,scn);
+    ctx.save(); ctx.translate(sx,sy); ctx.rotate(-sim.ego.theta);
+    ctx.fillStyle='#2DD4BF';
+    ctx.beginPath(); ctx.moveTo(11,0); ctx.lineTo(-8,-6); ctx.lineTo(-8,6); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+}
+
+function updatePanel(sim){
+  document.getElementById('scnTitle').textContent = sim.scn.title;
+  document.getElementById('mTime').textContent = sim.t.toFixed(1)+' s';
+  document.getElementById('mSpeed').textContent = (sim.ego.v*3.6).toFixed(1)+' km/h';
+  document.getElementById('mClear').textContent = isFinite(sim.minClearance)? sim.minClearance.toFixed(2)+' m':'— m';
+  document.getElementById('mLatency').textContent = sim.replanLatencyMs.toFixed(1)+' ms';
+  document.getElementById('mTracks').textContent = sim.tracks.length;
+  const smoothTxt = sim.traj ? (sim.planInfo.smooth).toFixed(2) : '—';
+  document.getElementById('mSmooth').textContent = smoothTxt;
+
+  const mode=sim.decision?sim.decision.stateName:'LaneFollow';
+  const modeText=document.getElementById('modeText'), modeDot=document.getElementById('modeDot'), modeNote=document.getElementById('modeNote');
+  modeText.textContent=mode;
+  const notes={
+    LaneFollow:'Nominal driving corridor, no active risk agents within threshold.',
+    UnmarkedRoadFollow:'No lane markings detected — planning free-space corridor from perception + goal heading.',
+    Crawl:'High agent density or unmarked road with close traffic — speed envelope reduced.',
+    Yield:'Time-to-collision below caution threshold — ceding right-of-way to nearest agent.',
+    EmergencyStop:'Critical clearance or TTC breach — hard braking fan engaged.'
+  };
+  modeNote.textContent = notes[mode]||'';
+  const dotColor = mode==='EmergencyStop'?'var(--danger)': (mode==='Yield'||mode==='Crawl')?'var(--warn)':'var(--accent)';
+  modeDot.style.background=dotColor; modeDot.style.boxShadow=`0 0 8px ${dotColor}`;
+
+  document.getElementById('barRisk').style.width = Math.min(100, (sim.planInfo.risk||0)*100)+'%';
+  document.getElementById('barRisk').style.background = sim.planInfo.risk>0.6?'var(--danger)': sim.planInfo.risk>0.3?'var(--warn)':'var(--accent)';
+  document.getElementById('barSmooth').style.width = Math.min(100,(sim.planInfo.smooth||0)*25)+'%';
+  document.getElementById('barProgress').style.width = Math.min(100, 100-((sim.planInfo.progress||0)/1.5))+'%';
+
+  const chips=[['chipCam',sim.t],['chipLidar',sim.t],['chipRadar',sim.t]];
+  document.getElementById('chipCam').classList.toggle('on', Math.random()>0.02);
+  document.getElementById('chipLidar').classList.toggle('on', Math.random()>0.02);
+  document.getElementById('chipRadar').classList.toggle('on', Math.random()>0.02);
+}
+
+let acc=0;
+function loop(ts){
+  requestAnimationFrame(loop);
+  if(!playing) return;
+  acc += speedMult;
+  while(acc>=1){ tick(sim); acc-=1; }
+  draw(sim); updatePanel(sim);
+  if(sim.done){ playing=false; document.getElementById('playBtn').textContent='Restart run'; }
+}
+
+function startScenario(name){
+  sim=newSim(name);
+  playing=true;
+  document.getElementById('playBtn').textContent='Pause';
+}
+
+document.getElementById('scnSelect').addEventListener('change', e=>startScenario(e.target.value));
+document.getElementById('restartBtn').addEventListener('click', ()=>startScenario(document.getElementById('scnSelect').value));
+document.getElementById('speedSelect').addEventListener('change', e=>speedMult=parseFloat(e.target.value));
+document.getElementById('playBtn').addEventListener('click', ()=>{
+  if(sim.done){ startScenario(document.getElementById('scnSelect').value); return; }
+  playing=!playing;
+  document.getElementById('playBtn').textContent = playing?'Pause':'Play';
+});
+
+startScenario('village_road');
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
