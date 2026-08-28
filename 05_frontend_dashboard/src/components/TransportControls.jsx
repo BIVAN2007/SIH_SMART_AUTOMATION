@@ -1,5 +1,4 @@
-// components/TransportControls.jsx
-// Scenario picker + connect/disconnect controls for the live WebSocket run.
+// Scenario picker + live simulation transport/speed controls.
 
 const SCENARIOS = [
   { value: 'village_road', label: '1 · Unmarked village road' },
@@ -9,8 +8,16 @@ const SCENARIOS = [
   { value: 'cattle_crossing', label: '5 · Sudden cattle crossing' },
 ]
 
+const SPEEDS = [
+  { value: 0.25, label: '0.25×' },
+  { value: 0.5, label: '0.5×' },
+  { value: 1, label: '1×' },
+  { value: 2, label: '2×' },
+  { value: 4, label: '4×' },
+]
+
 export default function TransportControls({
-  scenario, setScenario, status, onStart, onStop, done,
+  scenario, setScenario, status, onStart, onStop, done, speed, onSpeedChange,
 }) {
   const isLive = status === 'connecting' || status === 'open'
 
@@ -29,6 +36,15 @@ export default function TransportControls({
       ) : (
         <button onClick={onStop}>Stop</button>
       )}
+
+      <div className="speed-control">
+        <span className="speedlabel">SIM SPEED</span>
+        <select value={speed} onChange={(e) => onSpeedChange(e.target.value)} aria-label="Simulation speed">
+          {SPEEDS.map((s) => (
+            <option key={s.value} value={s.value}>{s.label}</option>
+          ))}
+        </select>
+      </div>
 
       <div className="spacer" />
       <span className={`conn-pill conn-${status}`}>{status}</span>
