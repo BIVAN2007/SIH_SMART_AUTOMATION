@@ -34,6 +34,9 @@ button:disabled{opacity:.5;cursor:not-allowed;}
 button.primary{background:var(--accent);color:#06201C;border-color:var(--accent);font-weight:600;}
 button.primary:hover{opacity:.9;}
 .spacer{flex:1;}
+.speed-control{display:flex;align-items:center;gap:6px;}
+.speedlabel{font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.08em;color:var(--dim);white-space:nowrap;}
+.speed-control select{min-width:70px;}
 select{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:6px;
   padding:8px 10px;font-family:inherit;font-size:13px;}
 select:disabled{opacity:.6;}
