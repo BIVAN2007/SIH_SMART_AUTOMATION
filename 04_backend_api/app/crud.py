@@ -74,3 +74,47 @@ def get_metrics_summary(db: Session) -> dict:
         "overall_completion_rate_pct": round(100 * overall_completed / total_all, 1) if total_all else 0.0,
         "overall_collision_rate_pct": round(100 * overall_collided / total_all, 1) if total_all else 0.0,
     }
+
+
+# ---- road conditions (jams, potholes, V2V alerts) ----
+
+def report_road_condition(db: Session, road_id: str, condition_type: str,
+                           severity: float, reported_by: str | None) -> models.RoadCondition:
+    """Called whenever a car (real or simulated) flags a road segment.
+    De-dupes: if this exact condition is already active on this road,
+    bump its severity/timestamp instead of stacking duplicate rows."""
+    existing = (
+        db.query(models.RoadCondition)
+        .filter(models.RoadCondition.road_id == road_id,
+                models.RoadCondition.condition_type == condition_type,
+                models.RoadCondition.active == True)  # noqa: E712
+        .first()
+    )
+    if existing:
+        existing.severity = max(existing.severity, severity)
+        existing.created_at = func.now()
+        db.commit()
+        db.refresh(existing)
+        return existing
+
+    condition = models.RoadCondition(
+        road_id=road_id, condition_type=condition_type,
+        severity=severity, reported_by=reported_by, active=True,
+    )
+    db.add(condition)
+    db.commit()
+    db.refresh(condition)
+    return condition
+
+
+def list_active_conditions(db: Session) -> list[models.RoadCondition]:
+    return db.query(models.RoadCondition).filter(models.RoadCondition.active == True).all()  # noqa: E712
+
+
+def clear_road_condition(db: Session, condition_id: int) -> bool:
+    condition = db.query(models.RoadCondition).filter(models.RoadCondition.id == condition_id).first()
+    if not condition:
+        return False
+    condition.active = False
+    db.commit()
+    return True
