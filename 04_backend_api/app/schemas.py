@@ -77,9 +77,27 @@ class RouteRequest(BaseModel):
 class RouteOut(BaseModel):
     start: str
     destination: str
-    path: list[str]
+    path: list[str]          # location ids visited, in order
+    path_names: list[str]    # same, as real place names
+    road_ids: list[str]      # roads actually used
     total_cost: float
-    avoided: list[str]   # road_ids that were penalized/avoided due to active conditions
+    avoided: list[str]       # road_ids that were penalized/avoided due to active conditions
+
+
+class LocationOut(BaseModel):
+    id: str
+    name: str
+    lat: float
+    lng: float
+
+
+class RoadOut(BaseModel):
+    id: str
+    from_id: str
+    to_id: str
+    from_name: str
+    to_name: str
+    length_km: float
 
 
 # ---- manual agent spawning (buttons) ----
