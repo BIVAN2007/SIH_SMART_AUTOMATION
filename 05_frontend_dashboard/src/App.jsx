@@ -7,6 +7,7 @@ import ModeBadge from './components/ModeBadge'
 import TransportControls from './components/TransportControls'
 import MetricsSummary from './components/MetricsSummary'
 import ManualControls from './components/ManualControls'
+import RoutePanel from './components/RoutePanel'
 
 const TITLES = {
   village_road: 'Village Road (Unmarked)',
@@ -67,6 +68,7 @@ export default function App() {
         <ModeBadge telemetry={telemetry} />
         <MetricsPanel telemetry={telemetry} />
         <ManualControls status={status} onSpawn={spawnAgent} />
+        <RoutePanel />
         <MetricsSummary refreshKey={refreshKey} />
 
         <div className="block">
