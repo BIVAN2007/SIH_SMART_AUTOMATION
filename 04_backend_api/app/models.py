@@ -47,3 +47,21 @@ class TelemetrySnapshot(Base):
     payload = Column(JSON, nullable=False)   # full Telemetry.to_json() blob for this tick
 
     run = relationship("Run", back_populates="snapshots")
+
+
+class RoadCondition(Base):
+    """A single reported condition on a named road segment: a jam, a
+    pothole/bumpy patch, an accident, etc. Any car (simulated or later,
+    real) can create one; any car planning a route reads active ones to
+    avoid that segment. condition_type + severity together drive the
+    routing cost penalty in road_network.py -- a JAM and a POTHOLE use
+    the exact same table/flow, just different severity."""
+    __tablename__ = "road_conditions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    road_id = Column(String, index=True, nullable=False)
+    condition_type = Column(String, nullable=False)  # JAM | POTHOLE | BUMPY_ROAD | ACCIDENT | CONSTRUCTION
+    severity = Column(Float, default=0.6)             # 0..1, scales the route-cost penalty
+    reported_by = Column(String, nullable=True)        # vehicle/scenario id that reported it
+    active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
