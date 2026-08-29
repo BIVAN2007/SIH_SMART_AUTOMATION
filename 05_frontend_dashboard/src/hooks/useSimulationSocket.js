@@ -70,6 +70,12 @@ export function useSimulationSocket() {
     }
   }, [])
 
+  const spawnAgent = useCallback((agentType, behavior) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'spawn_agent', agent_type: agentType, behavior }))
+    }
+  }, [])
+
   const disconnect = useCallback(() => {
     if (wsRef.current) {
       wsRef.current.onclose = null
@@ -86,5 +92,5 @@ export function useSimulationSocket() {
     }
   }, [])
 
-  return { telemetry, status, history, connect, setSpeed, disconnect }
+  return { telemetry, status, history, connect, setSpeed, spawnAgent, disconnect }
 }
