@@ -116,10 +116,23 @@ def generate_scenario(name: str) -> Scenario:
 ALL_SCENARIOS = ["village_road", "urban_intersection", "highway_merge", "market_area", "cattle_crossing"]
 
 
-def step_agents(agents: list[Agent], t: float, dt: float, bounds: tuple, rng: np.random.Generator) -> None:
+def step_agents(agents: list[Agent], t: float, dt: float, bounds: tuple,
+                 rng: np.random.Generator, ego_pos: np.ndarray | None = None) -> None:
     """Advance ground-truth agent motion one timestep (in-place). Stand-in
-    for CARLA actor behavior trees / RoadRunner Scenario actor logic."""
+    for CARLA actor behavior trees / RoadRunner Scenario actor logic.
+
+    ego_pos, when given, lets 'weave' and 'randomWalk' agents (pedestrians,
+    pushcarts, two-wheelers, auto-rickshaws -- i.e. the ones ambling around
+    rather than deliberately testing a hazard) steer away once they get
+    close, instead of wandering straight into a car that has already
+    stopped for them. This is deliberately NOT applied to 'suddenCross' --
+    that behavior exists specifically to test the ego's emergency braking
+    against an agent that does NOT get out of the way, and softening that
+    would defeat the point of the scenario."""
     xmin, xmax, ymin, ymax = bounds
+    AVOID_RADIUS = 6.0
+    AVOID_STRENGTH = 2.2
+
     for a in agents:
         if a.behavior == "straight":
             pass
@@ -128,9 +141,6 @@ def step_agents(agents: list[Agent], t: float, dt: float, bounds: tuple, rng: np
             a.vel[1] = np.clip(a.vel[1], -3, 3)
         elif a.behavior == "randomWalk":
             a.vel += 0.4 * rng.standard_normal(2) * dt * 5
-            spd = np.linalg.norm(a.vel)
-            if spd > 1.6:
-                a.vel = a.vel / spd * 1.6
         elif a.behavior == "suddenCross":
             if t < a.trigger_t:
                 a.vel[:] = 0.0
@@ -142,6 +152,20 @@ def step_agents(agents: list[Agent], t: float, dt: float, bounds: tuple, rng: np
                 a.vel[1] = 0.0
             else:
                 a.vel[1] = -1.0
+
+        if ego_pos is not None and a.behavior in ("weave", "randomWalk"):
+            diff = a.pos - ego_pos
+            dist = float(np.linalg.norm(diff))
+            if 1e-6 < dist < AVOID_RADIUS:
+                push = diff / dist * AVOID_STRENGTH * (1.0 - dist / AVOID_RADIUS)
+                a.vel += push
+
+        if a.behavior == "weave":
+            a.vel[1] = np.clip(a.vel[1], -3, 3)
+        elif a.behavior == "randomWalk":
+            spd = np.linalg.norm(a.vel)
+            if spd > 2.4:   # slightly higher cap than before so the avoidance push isn't swallowed
+                a.vel = a.vel / spd * 2.4
 
         a.pos += a.vel * dt
         if a.pos[0] < xmin or a.pos[0] > xmax:
