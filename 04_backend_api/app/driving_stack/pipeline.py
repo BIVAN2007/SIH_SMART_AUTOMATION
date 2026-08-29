@@ -15,6 +15,20 @@ from dataclasses import dataclass, asdict
 import numpy as np
 
 from .scenarios import generate_scenario, step_agents, Agent, EgoState
+
+# Default behavior + spawn offset (ahead of / beside the ego car) used when
+# a manual "spawn" button doesn't specify one. Mirrors how scenarios.py
+# scripts these same agent types, so a manually-spawned pedestrian behaves
+# identically to a scripted one -- the planner/tracker/risk code can't
+# tell the difference.
+MANUAL_SPAWN_DEFAULTS = {
+    "pedestrian":    {"behavior": "randomWalk", "ahead": 18, "lateral": 4.0, "vel": [0.1, -0.9]},
+    "cattle":        {"behavior": "suddenCross", "ahead": 22, "lateral": 6.0, "vel": [0.0, 3.0]},
+    "auto_rickshaw": {"behavior": "weave", "ahead": 20, "lateral": 3.0, "vel": [1.0, 0.4]},
+    "pushcart":      {"behavior": "weave", "ahead": 15, "lateral": 2.5, "vel": [-0.3, 0.1]},
+    "two_wheeler":   {"behavior": "weave", "ahead": 20, "lateral": -3.0, "vel": [2.5, 0.6]},
+    "car":           {"behavior": "straight", "ahead": 25, "lateral": 3.0, "vel": [10.0, 0.0]},
+}
 from .perception import SimulatedPerception, SensorRanges
 from .tracker import MultiObjectTracker
 from .predictor import predict
@@ -75,6 +89,28 @@ class DrivingPipeline:
         self.done = False
         self.collision = False
         self.driven_path: list[list[float]] = []
+
+    def spawn_agent(self, agent_type: str, behavior: str | None = None) -> bool:
+        """Manual injection: drop a new agent into the *running* simulation,
+        near the ego car, same shape/behavior system scripted agents use.
+        Called from a WebSocket 'spawn_agent' control message (button press
+        on the dashboard). Returns False if agent_type is unrecognized."""
+        defaults = MANUAL_SPAWN_DEFAULTS.get(agent_type)
+        if defaults is None:
+            return False
+
+        heading = np.array([np.cos(self.ego.theta), np.sin(self.ego.theta)])
+        lateral = np.array([-heading[1], heading[0]])
+        spawn_pos = self.ego.pos + heading * defaults["ahead"] + lateral * defaults["lateral"]
+
+        self.agents.append(Agent(
+            type=agent_type,
+            pos=spawn_pos,
+            vel=np.array(defaults["vel"], dtype=float),
+            behavior=behavior or defaults["behavior"],
+            trigger_t=self.t,   # suddenCross-style agents "wait" then trigger immediately
+        ))
+        return True
 
     def step(self) -> Telemetry:
         if self.done:
