@@ -45,3 +45,45 @@ class MetricsSummaryOut(BaseModel):
     scenarios: list[ScenarioSummary]
     overall_completion_rate_pct: float
     overall_collision_rate_pct: float
+
+
+# ---- V2V road conditions + global routing ----
+
+class RoadConditionCreate(BaseModel):
+    road_id: str
+    condition_type: str = "JAM"   # JAM | POTHOLE | BUMPY_ROAD | ACCIDENT | CONSTRUCTION
+    severity: float = 0.6          # 0..1
+    reported_by: str | None = None
+
+
+class RoadConditionOut(BaseModel):
+    id: int
+    road_id: str
+    condition_type: str
+    severity: float
+    reported_by: str | None
+    active: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class RouteRequest(BaseModel):
+    start: str
+    destination: str
+
+
+class RouteOut(BaseModel):
+    start: str
+    destination: str
+    path: list[str]
+    total_cost: float
+    avoided: list[str]   # road_ids that were penalized/avoided due to active conditions
+
+
+# ---- manual agent spawning (buttons) ----
+
+class SpawnAgentRequest(BaseModel):
+    agent_type: str    # pedestrian | cattle | auto_rickshaw | pushcart | two_wheeler | car
+    behavior: str | None = None   # defaults chosen per agent_type if omitted
