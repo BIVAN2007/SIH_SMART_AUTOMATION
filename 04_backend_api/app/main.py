@@ -26,6 +26,18 @@ from .driving_stack.scenarios import ALL_SCENARIOS
 from .driving_stack.pipeline import DrivingPipeline
 from .driving_stack import road_network
 
+# Each local simulation scenario is mapped to one real Kolkata road for demo
+# purposes -- the local (x,y) sandbox and the global place-name graph are
+# separate layers, this is just which real road a given scenario "stands for"
+# when it auto-reports a jam.
+SCENARIO_TO_ROAD = {
+    "village_road": road_network.road_id("salt_lake", "dum_dum"),
+    "urban_intersection": road_network.road_id("park_circus", "sealdah"),
+    "highway_merge": road_network.road_id("em_bypass", "new_town"),
+    "market_area": road_network.road_id("esplanade", "sealdah"),
+    "cattle_crossing": road_network.road_id("shyambazar", "dum_dum"),
+}
+
 Base.metadata.create_all(bind=engine)  # creates tables on first run if they don't exist
 
 app = FastAPI(title="ADAS SIH Backend", version="1.0")
@@ -131,6 +143,19 @@ def clear_road_condition(condition_id: int, db: Session = Depends(get_db)):
     return {"status": "cleared", "id": condition_id}
 
 
+@app.get("/api/navigation/locations", response_model=list[schemas.LocationOut])
+def get_locations():
+    """Real Kolkata places with real coordinates, for the frontend map's
+    start/destination pickers and marker plotting."""
+    return road_network.get_locations()
+
+
+@app.get("/api/navigation/roads", response_model=list[schemas.RoadOut])
+def get_roads():
+    """Every real road segment, for the 'report a condition' picker."""
+    return road_network.get_roads()
+
+
 @app.get("/api/navigation/route", response_model=schemas.RouteOut)
 def get_route(start: str, destination: str, db: Session = Depends(get_db)):
     """The 'Google Maps' endpoint: best route from start to destination,
@@ -205,13 +230,14 @@ async def live_stream(ws: WebSocket, scenario_name: str, seed: int | None = None
             if telem.replan_latency_ms > 0:
                 latencies.append(telem.replan_latency_ms)
 
-            # Bridge to the global layer: if this car is crawling through
-            # high risk, auto-flag the road it's on so the next car's
-            # /api/navigation/route call routes around it. scenario_name
-            # doubles as the road_id here since each local scenario is a
-            # single stretch of road.
-            if telem.ego_speed_kmh < 5.0 and telem.path_risk > 0.7:
-                crud.report_road_condition(db, scenario_name, "JAM", telem.path_risk, scenario_name)
+            # Bridge to the global layer: repeated hard braking (not just low
+            # speed) is what actually gets auto-reported, on the real Kolkata
+            # road this scenario stands in for.
+            if telem.congestion_alert:
+                road_id = SCENARIO_TO_ROAD.get(scenario_name)
+                if road_id:
+                    severity = min(1.0, 0.5 + 0.15 * telem.hard_brake_count_5s)
+                    crud.report_road_condition(db, road_id, "JAM", severity, f"auto:{scenario_name}")
 
             await ws.send_json(telem.to_json())
 
