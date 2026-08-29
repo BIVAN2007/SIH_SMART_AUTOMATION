@@ -54,6 +54,9 @@ export const api = {
 
   metricsSummary: () => request('/api/metrics/summary'),
 
+  listLocations: () => request('/api/navigation/locations'),
+  listRoads: () => request('/api/navigation/roads'),
+
   getRoute: (start, destination) => {
     const params = new URLSearchParams({ start, destination })
     return request(`/api/navigation/route?${params.toString()}`)
