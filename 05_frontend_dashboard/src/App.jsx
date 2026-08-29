@@ -6,6 +6,7 @@ import MetricsPanel from './components/MetricsPanel'
 import ModeBadge from './components/ModeBadge'
 import TransportControls from './components/TransportControls'
 import MetricsSummary from './components/MetricsSummary'
+import ManualControls from './components/ManualControls'
 
 const TITLES = {
   village_road: 'Village Road (Unmarked)',
@@ -19,7 +20,7 @@ export default function App() {
   const [scenario, setScenario] = useState('village_road')
   const [refreshKey, setRefreshKey] = useState(0)
   const [speed, setSpeed] = useState(1)
-  const { telemetry, status, history, connect, setSpeed: sendSpeed, disconnect } = useSimulationSocket()
+  const { telemetry, status, history, connect, setSpeed: sendSpeed, spawnAgent, disconnect } = useSimulationSocket()
 
   const handleStart = useCallback(() => {
     connect(scenario, undefined, speed)
@@ -65,6 +66,7 @@ export default function App() {
       <div className="panel">
         <ModeBadge telemetry={telemetry} />
         <MetricsPanel telemetry={telemetry} />
+        <ManualControls status={status} onSpawn={spawnAgent} />
         <MetricsSummary refreshKey={refreshKey} />
 
         <div className="block">
