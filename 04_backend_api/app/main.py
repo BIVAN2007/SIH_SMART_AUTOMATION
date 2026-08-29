@@ -24,6 +24,7 @@ from .database import Base, engine, get_db
 from . import crud, schemas
 from .driving_stack.scenarios import ALL_SCENARIOS
 from .driving_stack.pipeline import DrivingPipeline
+from .driving_stack import road_network
 
 Base.metadata.create_all(bind=engine)  # creates tables on first run if they don't exist
 
@@ -109,6 +110,43 @@ def metrics_summary(db: Session = Depends(get_db)):
     return crud.get_metrics_summary(db)
 
 
+@app.post("/api/road-conditions", response_model=schemas.RoadConditionOut)
+def report_road_condition(req: schemas.RoadConditionCreate, db: Session = Depends(get_db)):
+    """A car (simulated or real) flags a road: jam, pothole, bumpy road,
+    accident, construction. Any future route request will avoid/penalize
+    this road until it's cleared."""
+    return crud.report_road_condition(db, req.road_id, req.condition_type, req.severity, req.reported_by)
+
+
+@app.get("/api/road-conditions", response_model=list[schemas.RoadConditionOut])
+def get_active_road_conditions(db: Session = Depends(get_db)):
+    return crud.list_active_conditions(db)
+
+
+@app.delete("/api/road-conditions/{condition_id}")
+def clear_road_condition(condition_id: int, db: Session = Depends(get_db)):
+    """Mark a condition resolved (jam cleared, pothole fixed)."""
+    if not crud.clear_road_condition(db, condition_id):
+        raise HTTPException(404, "Condition not found")
+    return {"status": "cleared", "id": condition_id}
+
+
+@app.get("/api/navigation/route", response_model=schemas.RouteOut)
+def get_route(start: str, destination: str, db: Session = Depends(get_db)):
+    """The 'Google Maps' endpoint: best route from start to destination,
+    automatically routing around roads any car has reported as jammed,
+    potholed, under construction, etc."""
+    active = [
+        {"road_id": c.road_id, "condition_type": c.condition_type, "severity": c.severity}
+        for c in crud.list_active_conditions(db)
+    ]
+    try:
+        result = road_network.calculate_route(start, destination, active)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    return result
+
+
 @app.websocket("/ws/live/{scenario_name}")
 async def live_stream(ws: WebSocket, scenario_name: str, seed: int | None = None):
     """Stream live telemetry with a browser-controlled simulation playback speed.
@@ -146,6 +184,12 @@ async def live_stream(ws: WebSocket, scenario_name: str, seed: int | None = None
                         speed_multiplier = max(0.25, min(4.0, value))
                     except (TypeError, ValueError):
                         continue
+                elif message.get("type") == "spawn_agent":
+                    # Manual button press: inject a pedestrian/cattle/etc into
+                    # the live run right now, same as a scripted scenario agent.
+                    agent_type = str(message.get("agent_type", ""))
+                    behavior = message.get("behavior")
+                    pipe.spawn_agent(agent_type, behavior)
         except (WebSocketDisconnect, RuntimeError):
             disconnected.set()
 
@@ -160,6 +204,14 @@ async def live_stream(ws: WebSocket, scenario_name: str, seed: int | None = None
             telem = pipe.step()
             if telem.replan_latency_ms > 0:
                 latencies.append(telem.replan_latency_ms)
+
+            # Bridge to the global layer: if this car is crawling through
+            # high risk, auto-flag the road it's on so the next car's
+            # /api/navigation/route call routes around it. scenario_name
+            # doubles as the road_id here since each local scenario is a
+            # single stretch of road.
+            if telem.ego_speed_kmh < 5.0 and telem.path_risk > 0.7:
+                crud.report_road_condition(db, scenario_name, "JAM", telem.path_risk, scenario_name)
 
             await ws.send_json(telem.to_json())
 
