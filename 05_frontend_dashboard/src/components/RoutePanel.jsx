@@ -1,9 +1,10 @@
 // components/RoutePanel.jsx
 // The visible "Google Maps" layer: pick a real start and destination place
-// in Kolkata, see the actual route drawn on a real map, see live jam/pothole
-// reports plotted on the roads they were reported on, and report one
-// yourself. Auto-reported jams (from repeated hard braking in a live run)
-// show up here the same way -- same list, same map, same avoidance logic.
+// in Kolkata, see the route drawn on a real map, then press "Start journey"
+// to watch an arrow actually travel from the start pin to the end pin --
+// the journey timer runs only for that trip and stops the moment the arrow
+// reaches the destination. Live jam/pothole reports (auto or manual) show
+// on the same map and get avoided by the route the same way either way.
 
 import { useEffect, useState, useCallback } from 'react'
 import { api } from '../api'
@@ -25,6 +26,10 @@ export default function RoutePanel() {
   const [reportRoad, setReportRoad] = useState(null)
   const [reportType, setReportType] = useState('JAM')
 
+  const [journeyTrigger, setJourneyTrigger] = useState(0)
+  const [journeyStatus, setJourneyStatus] = useState('idle') // idle | running | arrived
+  const [journeyProgress, setJourneyProgress] = useState(0)
+
   useEffect(() => {
     api.listLocations().then(setLocations).catch((e) => setLocError(e.message))
     api.listRoads().then((rs) => { setRoads(rs); if (rs.length) setReportRoad(rs[0].id) }).catch((e) => setLocError(e.message))
@@ -36,14 +41,14 @@ export default function RoutePanel() {
 
   useEffect(() => {
     loadConditions()
-    // Auto-reported jams can appear anytime a live run is happening --
-    // poll so they show up here without needing a manual refresh.
     const interval = setInterval(loadConditions, 5000)
     return () => clearInterval(interval)
   }, [loadConditions])
 
   const findRoute = useCallback(() => {
     setRouteError(null)
+    setJourneyStatus('idle')
+    setJourneyProgress(0)
     api.getRoute(start, destination).then(setRoute).catch((e) => setRouteError(e.message))
   }, [start, destination])
 
@@ -60,6 +65,13 @@ export default function RoutePanel() {
     api.clearRoadCondition(id).then(() => { loadConditions(); findRoute() }).catch(() => {})
   }, [loadConditions, findRoute])
 
+  const startJourney = useCallback(() => {
+    if (!route || route.path.length === 0) return
+    setJourneyStatus('running')
+    setJourneyProgress(0)
+    setJourneyTrigger((t) => t + 1)
+  }, [route])
+
   const roadLabel = (r) => `${r.from_name} \u2194 ${r.to_name}`
 
   return (
@@ -68,7 +80,12 @@ export default function RoutePanel() {
       {locError && <div className="note" style={{ color: 'var(--danger)' }}>Backend unreachable: {locError}</div>}
 
       {locations && (
-        <MapView locations={locations} route={route} conditions={conditions} roads={roads} />
+        <MapView
+          locations={locations} route={route} conditions={conditions} roads={roads}
+          journeyTrigger={journeyTrigger}
+          onProgress={setJourneyProgress}
+          onArrive={() => setJourneyStatus('arrived')}
+        />
       )}
 
       <div className="route-row" style={{ marginTop: 10 }}>
@@ -89,6 +106,21 @@ export default function RoutePanel() {
           <div className="note">~{route.total_cost} km
             {route.avoided.length > 0 && <> · rerouted around {route.avoided.length} reported road(s)</>}
           </div>
+
+          <div className="journey-row">
+            <button className="primary" onClick={startJourney} disabled={journeyStatus === 'running'}>
+              {journeyStatus === 'running' ? 'En route…' : 'Start journey'}
+            </button>
+            {journeyStatus === 'running' && (
+              <span className="note">
+                {route.path_names[0]} → {route.path_names[route.path_names.length - 1]} · {Math.round(journeyProgress * 100)}%
+              </span>
+            )}
+            {journeyStatus === 'arrived' && <span className="chip chip-ok">Arrived — simulation ended</span>}
+          </div>
+          {journeyStatus === 'running' && (
+            <div className="progress-track"><div className="progress-fill" style={{ width: `${journeyProgress * 100}%` }} /></div>
+          )}
         </div>
       )}
       {route && route.path.length === 0 && <div className="note">No route found between those places.</div>}

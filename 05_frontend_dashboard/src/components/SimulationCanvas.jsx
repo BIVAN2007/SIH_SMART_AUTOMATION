@@ -66,6 +66,42 @@ export default function SimulationCanvas({ scenario, telemetry, history }) {
       return
     }
 
+    // start / goal markers -- drawn every frame so they're always visible,
+    // clearly labeled and different colors so it's obvious which is which
+    if (telemetry.start_pos) {
+      const [sx, sy] = worldToScreen(telemetry.start_pos, bounds, width, height)
+      ctx.fillStyle = '#22C55E'
+      ctx.beginPath()
+      ctx.arc(sx, sy, 7, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.strokeStyle = '#0B0E11'
+      ctx.lineWidth = 1.5
+      ctx.stroke()
+      ctx.fillStyle = '#22C55E'
+      ctx.font = 'bold 11px monospace'
+      ctx.fillText('START', sx - 18, sy - 12)
+    }
+    if (telemetry.goal_pos) {
+      const [gx, gy] = worldToScreen(telemetry.goal_pos, bounds, width, height)
+      ctx.fillStyle = '#EF4444'
+      ctx.beginPath()
+      ctx.arc(gx, gy, 7, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.strokeStyle = '#0B0E11'
+      ctx.lineWidth = 1.5
+      ctx.stroke()
+      // small flag so it reads as a finish line, not just another dot
+      ctx.strokeStyle = '#EF4444'
+      ctx.lineWidth = 1.5
+      ctx.beginPath()
+      ctx.moveTo(gx, gy - 7)
+      ctx.lineTo(gx, gy - 20)
+      ctx.stroke()
+      ctx.fillStyle = '#EF4444'
+      ctx.font = 'bold 11px monospace'
+      ctx.fillText('END', gx - 12, gy - 22)
+    }
+
     // driven trail
     if (history.length > 1) {
       ctx.strokeStyle = 'rgba(45,212,191,0.35)'
