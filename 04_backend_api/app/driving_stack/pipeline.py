@@ -58,6 +58,8 @@ class Telemetry:
     ego_pos: list
     ego_theta: float
     ego_speed_kmh: float
+    start_pos: list      # constant per run -- where this scenario's ego begins
+    goal_pos: list        # constant per run -- where the ego is trying to reach
     agents: list          # [{type, pos}, ...] ground truth (for viz)
     tracks: list           # [{id, type, pos, vel}, ...] fused tracker output
     planned_path: list      # [[x,y], ...]
@@ -85,6 +87,7 @@ class DrivingPipeline:
         self.t = 0.0
 
         self.ego = EgoState(pos=self.scn.ego0.pos.copy(), theta=self.scn.ego0.theta, v=self.scn.ego0.v)
+        self.start_pos = self.scn.ego0.pos.copy()
         self.agents: list[Agent] = [
             Agent(a.type, a.pos.copy(), a.vel.copy(), a.behavior, a.trigger_t) for a in self.scn.agents
         ]
@@ -200,6 +203,8 @@ class DrivingPipeline:
             ego_pos=self.ego.pos.round(3).tolist(),
             ego_theta=round(self.ego.theta, 4),
             ego_speed_kmh=round(self.ego.v * 3.6, 2),
+            start_pos=self.start_pos.round(2).tolist(),
+            goal_pos=self.scn.goal.round(2).tolist(),
             agents=[{"type": a.type, "pos": a.pos.round(2).tolist()} for a in self.agents],
             tracks=[{"id": t.id, "type": t.type, "pos": t.pos.round(2).tolist(),
                       "vel": t.vel.round(2).tolist()} for t in tracks],
